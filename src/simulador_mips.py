@@ -52,6 +52,42 @@ INSTRUCOES_J = {
     0x03: "jal"
 }
 
+#----- Mapa de identificação de registradores-----#
+REGISTRADORES = {
+    0: "$zero",
+    1: "$at",
+    2: "$v0",
+    3: "$v1",
+    4: "$a0",
+    5: "$a1",
+    6: "$a2",
+    7: "$a3",
+    8: "$t0",
+    9: "$t1",
+    10: "$t2",
+    11: "$t3",
+    12: "$t4",
+    13: "$t5",
+    14: "$t6",
+    15: "$t7",
+    16: "$s0",
+    17: "$s1",
+    18: "$s2",
+    19: "$s3",
+    20: "$s4",
+    21: "$s5",
+    22: "$s6",
+    23: "$s7",
+    24: "$t8",
+    25: "$t9",
+    26: "$k0",
+    27: "$k1",
+    28: "$gp",
+    29: "$sp",
+    30: "$fp",
+    31: "$ra"
+}
+
 # Idenfica o formato da instrução
 def idenficar_formato(instrucao):
     opcode = int(instrucao[0:6], 2)
@@ -111,6 +147,31 @@ def decodificar_formato_r(binario):
         "shift": shift,
         "opPlus": opPlus
     }
+
+# Função para gerar o texto da instrução do formato R
+def gerar_texto_r(nome, campos):
+    rs = campos["rs"]
+    rt = campos["rt"]
+    rd = campos["rd"]
+    shift = campos["shift"]
+
+    if nome in ["sll", "srl", "sra"]:
+        return f"{nome} ${rd}, ${rt}, {shift}"
+
+    if nome in ["jr"]:
+        return f"{nome} ${rs}"
+
+    if nome in ["mfhi", "mflo"]:
+        return f"{nome} ${rd}"
+
+    if nome in ["mult", "multu", "div", "divu"]:
+        return f"{nome} ${rs}, ${rt}"
+
+    if nome in ["sllv", "srlv", "srav"]:
+        return f"{nome} ${rd}, ${rt}, ${rs}"
+
+    return f"{nome} ${rd}, ${rs}, ${rt}"
+
 
 # Função para decodificar instruções do formato I
 def decodificar_formato_i(binario):
