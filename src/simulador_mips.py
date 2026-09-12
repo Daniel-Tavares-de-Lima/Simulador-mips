@@ -1,7 +1,14 @@
 import json
 
+##----Resultado Final
+resultado_final = []
+
 with open("entrada/entrada.json", "r") as arquivo:
     dados = json.load(arquivo)
+
+with open("saida/saida.json", "w") as arquivo:
+    json.dump(resultado_final, arquivo, indent=4)
+
 
 ##---------Mapa de indenficação de instruções---------##
 INSTRUCOES_R = {
@@ -168,11 +175,25 @@ def hexadecimal_para_binario(hexa):
     numero = int(hexa, 16)
     return format(numero, "032b")
 
+
+# Gerar saida
+def gerar_saida(hexadecimal):
+    resultado = decodificar_instrucao(hexadecimal)
+
+    return {
+        "hex": resultado["hex"],
+        "text": resultado["text"],
+        "regs": {},
+        "mem": {},
+        "stdout": ""
+    }
+
+
 # percorre a lista de instruções e converte cada uma para binário
 for instrucao in instrucoes:
-    binario = hexadecimal_para_binario(instrucao)
+    resultado_final.append(gerar_saida(instrucao))
 
-    print(f"Instrução: {instrucao} -> Binário: {binario}")
+
 
 # Função para decodificar instruções do formato R
 def decodificar_formato_r(binario):
