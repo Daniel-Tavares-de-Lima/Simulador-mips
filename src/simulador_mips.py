@@ -187,6 +187,24 @@ def decodificar_formato_i(binario):
         "immediate": immediate
     }
 
+# Função para gerar o texto da instrução do formato I
+def gerar_texto_i(nome, campos):
+    rs = campos["rs"]
+    rt = campos["rt"]
+    immediate = campos["immediate"]
+
+    if nome == "lui":
+        return f"{nome} ${rt}, {immediate}"
+
+    if nome in ["lw", "lbu", "sb", "sw"]:
+        return f"{nome} ${rt}, {immediate}(${rs})"
+
+    if nome in ["beq", "bne"]:
+        return f"{nome} ${rs}, ${rt}, {immediate}"
+
+    return f"{nome} ${rt}, ${rs}, {immediate}"
+
+
 # Função para decodificar instruções do formato J
 def decodificar_formato_j(binario):
     opcode = int(binario[0:6], 2)
@@ -197,3 +215,8 @@ def decodificar_formato_j(binario):
         "address": address
     }
 
+# Função para gerar o texto da instrução do formato J
+def gerar_texto_j(nome, campos):
+    address = campos["address"]
+
+    return f"{nome} {address}"
