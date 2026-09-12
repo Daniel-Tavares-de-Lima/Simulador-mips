@@ -52,3 +52,27 @@ def decodificar_formato_r(binario):
         "shift": shift,
         "opPlus": opPlus
     }
+
+# Função para decodificar instruções do formato I
+def decodificar_formato_i(binario):
+    opcode = int(binario[0:6], 2)
+    rs = int(binario[6:11], 2)
+    rt = int(binario[11:16], 2)
+    immediate = int(binario[16:32], 2)
+
+    return {
+        "opcode": opcode,
+        "rs": rs,
+        "rt": rt,
+        "immediate": immediate
+    }
+
+# Função para decodificar instruções do formato J
+def decodificar_formato_j(binario):
+    opcode = int(binario[0:6], 2)
+    address = int(binario[6:32], 2)
+
+    return {
+        "opcode": opcode,
+        "address": address
+    }
