@@ -115,6 +115,51 @@ def identificar_instrucao(formato, campo):
         return "Formato desconhecido"
 
 
+# Função principal para decodificar a instrução
+def decodificar_instrucao(hexadecimal):
+    binario = hexadecimal_para_binario(hexadecimal)
+
+    formato = idenficar_formato(binario)
+
+    # Decodifica a instrução com base no formato
+    if formato == "R":
+        campos = decodificar_formato_r(binario)
+
+    # Decodifica a instrução com base no formato
+    elif formato == "I":
+        campos = decodificar_formato_i(binario)
+
+    # Decodifica a instrução com base no formato
+    else:
+        campos = decodificar_formato_j(binario)
+
+    # Identifica o nome da instrução com base no formato e nos campos
+    nome = identificar_instrucao(formato, campos)
+
+    # Se a instrução não for reconhecida, retorna uma mensagem de erro
+    if nome is None:
+        return {
+            "hex": hexadecimal,
+            "text": "instrução desconhecida"
+        }
+
+    # Gera o texto da instrução com base no formato e nos campos
+    if formato == "R":
+        texto = gerar_texto_r(nome, campos)
+
+    # Se a instrução for do formato I, gera o texto correspondente
+    elif formato == "I":
+        texto = gerar_texto_i(nome, campos)
+
+    # Se a instrução for do formato J, gera o texto correspondente
+    else:
+        texto = gerar_texto_j(nome, campos)
+
+    return {
+        "hex": hexadecimal,
+        "text": texto
+    }
+
 #Lista de instruções
 instrucoes = dados["text"]
 
