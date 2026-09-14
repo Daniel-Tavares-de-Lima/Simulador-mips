@@ -1,13 +1,11 @@
 import json
+import os
 
 ##----Resultado Final
 resultado_final = []
 
 with open("entrada/entrada.json", "r") as arquivo:
     dados = json.load(arquivo)
-
-with open("saida/saida.json", "w") as arquivo:
-    json.dump(resultado_final, arquivo, indent=4)
 
 
 ##---------Mapa de indenficação de instruções---------##
@@ -59,6 +57,7 @@ INSTRUCOES_J = {
     0x03: "jal"
 }
 
+
 #----- Mapa de identificação de registradores-----#
 REGISTRADORES = {
     0: "$zero",
@@ -93,7 +92,9 @@ REGISTRADORES = {
     29: "$sp",
     30: "$fp",
     31: "$ra"
+
 }
+
 
 # Idenfica o formato da instrução
 def idenficar_formato(instrucao):
@@ -113,86 +114,23 @@ def idenficar_formato(instrucao):
 ## Idenfica a instrução com base no formato e no campo relevante
 def identificar_instrucao(formato, campo):
     if formato == "R":
-        return INSTRUCOES_R.get(campo, "Instrução desconhecida")
+        return INSTRUCOES_R.get(campo["opPlus"], "Instrução desconhecida")
+
     elif formato == "I":
-        return INSTRUCOES_I.get(campo, "Instrução desconhecida")
+        return INSTRUCOES_I.get(campo["opcode"], "Instrução desconhecida")
+
     elif formato == "J":
-        return INSTRUCOES_J.get(campo, "Instrução desconhecida")
+        return INSTRUCOES_J.get(campo["opcode"], "Instrução desconhecida")
+
     else:
         return "Formato desconhecido"
 
 
-# Função principal para decodificar a instrução
-def decodificar_instrucao(hexadecimal):
-    binario = hexadecimal_para_binario(hexadecimal)
-
-    formato = idenficar_formato(binario)
-
-    # Decodifica a instrução com base no formato
-    if formato == "R":
-        campos = decodificar_formato_r(binario)
-
-    # Decodifica a instrução com base no formato
-    elif formato == "I":
-        campos = decodificar_formato_i(binario)
-
-    # Decodifica a instrução com base no formato
-    else:
-        campos = decodificar_formato_j(binario)
-
-    # Identifica o nome da instrução com base no formato e nos campos
-    nome = identificar_instrucao(formato, campos)
-
-    # Se a instrução não for reconhecida, retorna uma mensagem de erro
-    if nome is None:
-        return {
-            "hex": hexadecimal,
-            "text": "instrução desconhecida"
-        }
-
-    # Gera o texto da instrução com base no formato e nos campos
-    if formato == "R":
-        texto = gerar_texto_r(nome, campos)
-
-    # Se a instrução for do formato I, gera o texto correspondente
-    elif formato == "I":
-        texto = gerar_texto_i(nome, campos)
-
-    # Se a instrução for do formato J, gera o texto correspondente
-    else:
-        texto = gerar_texto_j(nome, campos)
-
-    return {
-        "hex": hexadecimal,
-        "text": texto
-    }
-
-#Lista de instruções
-instrucoes = dados["text"]
 
 # Conversão de hexadecimal para binário
 def hexadecimal_para_binario(hexa):
     numero = int(hexa, 16)
     return format(numero, "032b")
-
-
-# Gerar saida
-def gerar_saida(hexadecimal):
-    resultado = decodificar_instrucao(hexadecimal)
-
-    return {
-        "hex": resultado["hex"],
-        "text": resultado["text"],
-        "regs": {},
-        "mem": {},
-        "stdout": ""
-    }
-
-
-# percorre a lista de instruções e converte cada uma para binário
-for instrucao in instrucoes:
-    resultado_final.append(gerar_saida(instrucao))
-
 
 
 # Função para decodificar instruções do formato R
@@ -205,7 +143,7 @@ def decodificar_formato_r(binario):
     opPlus = int(binario[26:32], 2)
 
     return{
-        
+
         "opcode": opcode,
         "rs": rs,
         "rt": rt,
@@ -232,14 +170,15 @@ def gerar_texto_r(nome, campos):
 
     if nome in ["mult", "multu", "div", "divu"]:
         return f"{nome} ${rs}, ${rt}"
-
+    
     if nome in ["sllv", "srlv", "srav"]:
         return f"{nome} ${rd}, ${rt}, ${rs}"
-
     return f"{nome} ${rd}, ${rs}, ${rt}"
 
 
+
 # Função para decodificar instruções do formato I
+
 def decodificar_formato_i(binario):
     opcode = int(binario[0:6], 2)
     rs = int(binario[6:11], 2)
@@ -251,10 +190,13 @@ def decodificar_formato_i(binario):
         "rs": rs,
         "rt": rt,
         "immediate": immediate
+
     }
+
 
 # Função para gerar o texto da instrução do formato I
 def gerar_texto_i(nome, campos):
+
     rs = campos["rs"]
     rt = campos["rt"]
     immediate = campos["immediate"]
@@ -270,7 +212,6 @@ def gerar_texto_i(nome, campos):
 
     return f"{nome} ${rt}, ${rs}, {immediate}"
 
-
 # Função para decodificar instruções do formato J
 def decodificar_formato_j(binario):
     opcode = int(binario[0:6], 2)
@@ -284,5 +225,79 @@ def decodificar_formato_j(binario):
 # Função para gerar o texto da instrução do formato J
 def gerar_texto_j(nome, campos):
     address = campos["address"]
-
     return f"{nome} {address}"
+
+
+# Função principal para decodificar a instrução
+def decodificar_instrucao(hexadecimal):
+    binario = hexadecimal_para_binario(hexadecimal)
+    formato = idenficar_formato(binario)
+
+    # Decodifica a instrução com base no formato
+    if formato == "R":
+        campos = decodificar_formato_r(binario)
+
+    # Decodifica a instrução com base no formato
+    elif formato == "I":
+        campos = decodificar_formato_i(binario)
+
+    # Decodifica a instrução com base no formato
+    else:
+        campos = decodificar_formato_j(binario)
+
+    # Identifica o nome da instrução com base no formato e nos campos
+    nome = identificar_instrucao(formato, campos)
+
+    # Se a instrução não for reconhecida, retorna uma mensagem de erro
+    if nome == "Instrução desconhecida":
+
+        return {
+            "hex": hexadecimal,
+            "text": "instrução desconhecida"
+        }
+
+    # Gera o texto da instrução com base no formato e nos campos
+    if formato == "R":
+        texto = gerar_texto_r(nome, campos)
+
+    # Se a instrução for do formato I, gera o texto correspondente
+    elif formato == "I":
+        texto = gerar_texto_i(nome, campos)
+
+    # Se a instrução for do formato J, gera o texto correspondente
+    else:
+        texto = gerar_texto_j(nome, campos)
+
+    return {
+        "hex": hexadecimal,
+        "text": texto
+    }
+
+
+#Lista de instruções
+instrucoes = dados["text"]
+
+
+# Gerar saida
+
+def gerar_saida(hexadecimal):
+    resultado = decodificar_instrucao(hexadecimal)
+
+    return {
+        "hex": resultado["hex"],
+        "text": resultado["text"],
+        "regs": {},
+        "mem": {},
+        "stdout": ""
+    }
+
+
+
+# percorre a lista de instruções e converte cada uma para binário
+for instrucao in instrucoes:
+    resultado_final.append(gerar_saida(instrucao))
+
+os.makedirs("saida", exist_ok=True)
+
+with open("saida/saida.json", "w") as arquivo:
+    json.dump(resultado_final, arquivo, indent=4)
