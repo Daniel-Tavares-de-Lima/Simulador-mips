@@ -274,12 +274,7 @@ def decodificar_instrucao(hexadecimal):
     }
 
 
-#Lista de instruções
-instrucoes = dados["text"]
-
-
 # Gerar saida
-
 def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
 
@@ -292,6 +287,8 @@ def gerar_saida(hexadecimal):
     }
 
 
+#Lista de instruções
+instrucoes = dados["text"]
 
 # percorre a lista de instruções e converte cada uma para binário
 for instrucao in instrucoes:
