@@ -31,13 +31,17 @@ INSTRUCOES_R = {
     0x18: "mult",
     0x19: "multu",
     0x1A: "div",
-    0x1B: "divu"
+    0x1B: "divu",
+    0x0C: "syscall"
 }
 
 
 INSTRUCOES_I = {
+    0x01: "bltz",
     0x04: "beq",
     0x05: "bne",
+    0x06: "blez",
+    0x07: "bgtz",
     0x08: "addi",
     0x09: "addiu",
     0x0A: "slti",
@@ -45,6 +49,7 @@ INSTRUCOES_I = {
     0x0D: "ori",
     0x0E: "xori",
     0x0F: "lui",
+    0x20: "lb",
     0x23: "lw",
     0x24: "lbu",
     0x28: "sb",
@@ -168,6 +173,9 @@ def gerar_texto_r(nome, campos):
     if nome in ["mfhi", "mflo"]:
         return f"{nome} ${rd}"
 
+    if nome == "syscall":
+        return "syscall"
+
     if nome in ["mult", "multu", "div", "divu"]:
         return f"{nome} ${rs}, ${rt}"
     
@@ -204,11 +212,14 @@ def gerar_texto_i(nome, campos):
     if nome == "lui":
         return f"{nome} ${rt}, {immediate}"
 
-    if nome in ["lw", "lbu", "sb", "sw"]:
+    if nome in ["lw", "lbu", "sb", "sw", "lb"]:
         return f"{nome} ${rt}, {immediate}(${rs})"
 
     if nome in ["beq", "bne"]:
         return f"{nome} ${rs}, ${rt}, {immediate}"
+
+    if nome in ["bltz", "blez", "bgtz"]:
+        return f"{nome} ${rs}, {immediate}"
 
     return f"{nome} ${rt}, ${rs}, {immediate}"
 
