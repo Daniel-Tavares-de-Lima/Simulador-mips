@@ -534,7 +534,7 @@ def executar_i(nome, campos, banco):
         escrever_registrador(banco, rt, 1 if val_rs < imm_signed else 0)
 
     elif nome == "andi":
-        # zero-extend do imediato (immediate já é 0-65535, sem sinal) - diferente de addi/slti
+        # zero-extend do imediato (0-65535, sem sinal), diferente de addi/slti
         escrever_registrador(banco, rt, ler_registrador(banco, rs) & immediate)
 
     elif nome == "ori":
