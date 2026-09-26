@@ -342,6 +342,14 @@ def para_signed_32(valor):
     return valor
 
 
+# Converte um valor de 16 bits sem sinal (o "immediate" decodificado) para inteiro com sinal
+def para_signed_16(valor):
+    valor = valor & 0xFFFF
+    if valor >= 0x8000:
+        valor -= 0x10000
+    return valor
+
+
 # Monta o snapshot de saída dos registradores: ordem $0..$31, pc, hi, lo, só valores != 0
 def gerar_snapshot_registradores(banco):
     snapshot = {}
@@ -492,6 +500,54 @@ def executar_r(nome, campos, banco):
     return overflow
 
 
+#----- Execução das instruções formato I (Entrega 2) -----#
+
+# Executa a instrução I já decodificada, alterando o banco de registradores.
+# Retorna True se a operação estourou 32 bits com sinal (só addi detecta isso).
+def executar_i(nome, campos, banco):
+    rs = campos["rs"]
+    rt = campos["rt"]
+    immediate = campos["immediate"]  # vem cru, 16 bits sem sinal (0-65535)
+
+    overflow = False
+
+    if nome == "addi":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        imm_signed = para_signed_16(immediate)  # soma com sinal: precisa de sign-extend
+        resultado = val_rs + imm_signed
+        # mesma regra de overflow do add: operandos com mesmo sinal e resultado
+        # truncado a 32 bits com sinal diferente do deles
+        resultado_signed = para_signed_32(resultado)
+        if (val_rs >= 0) == (imm_signed >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
+            overflow = True
+        escrever_registrador(banco, rt, resultado)
+
+    elif nome == "addiu":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        # apesar do nome, addiu também faz sign-extend do imediato; só não gera overflow
+        imm_signed = para_signed_16(immediate)
+        escrever_registrador(banco, rt, val_rs + imm_signed)
+
+    elif nome == "slti":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        imm_signed = para_signed_16(immediate)  # comparação com sinal
+        escrever_registrador(banco, rt, 1 if val_rs < imm_signed else 0)
+
+    elif nome == "andi":
+        # zero-extend do imediato (immediate já é 0-65535, sem sinal) - diferente de addi/slti
+        escrever_registrador(banco, rt, ler_registrador(banco, rs) & immediate)
+
+    elif nome == "ori":
+        escrever_registrador(banco, rt, ler_registrador(banco, rs) | immediate)
+
+    elif nome == "xori":
+        escrever_registrador(banco, rt, ler_registrador(banco, rs) ^ immediate)
+
+    # demais instruções I (lw, sw, lui, beq, bne, etc.) são de etapa futura: não fazem nada aqui
+
+    return overflow
+
+
 # Gerar saida
 def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
@@ -499,6 +555,8 @@ def gerar_saida(hexadecimal):
     overflow = False
     if resultado.get("formato") == "R":
         overflow = executar_r(resultado["nome"], resultado["campos"], banco_registradores)
+    elif resultado.get("formato") == "I":
+        overflow = executar_i(resultado["nome"], resultado["campos"], banco_registradores)
 
     return {
         "hex": resultado["hex"],
