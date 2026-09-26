@@ -285,6 +285,80 @@ def decodificar_instrucao(hexadecimal):
     }
 
 
+#----- Banco de registradores (32 uso geral + pc/hi/lo) -----#
+
+# Cria e inicializa o banco de registradores no padrão MARS
+def inicializar_registradores(regs_config):
+    banco = {
+        "regs": [0] * 32,   # $0 a $31
+        "pc": 0x00400000,
+        "hi": 0,
+        "lo": 0
+    }
+
+    # Defaults do MARS
+    banco["regs"][28] = 0x10008000  # $gp
+    banco["regs"][29] = 0x7fffeffc  # $sp
+
+    # Aplica config.regs por cima dos defaults (pode não existir/estar vazio)
+    if regs_config:
+        for nome, valor in regs_config.items():
+            if nome == "pc":
+                banco["pc"] = valor & 0xFFFFFFFF
+            elif nome == "hi":
+                banco["hi"] = valor & 0xFFFFFFFF
+            elif nome == "lo":
+                banco["lo"] = valor & 0xFFFFFFFF
+            else:
+                indice = int(nome.lstrip("$"))
+                escrever_registrador(banco, indice, valor)
+
+    return banco
+
+
+# Lê o valor (sem sinal, 32 bits) de um registrador pelo índice 0-31
+def ler_registrador(banco, indice):
+    return banco["regs"][indice]
+
+
+# Escreve valor em um registrador; $0 nunca muda e o valor é truncado a 32 bits
+def escrever_registrador(banco, indice, valor):
+    if indice == 0:
+        return
+    banco["regs"][indice] = valor & 0xFFFFFFFF
+
+
+# Converte um valor de 32 bits sem sinal para inteiro com sinal (complemento de dois)
+def para_signed_32(valor):
+    valor = valor & 0xFFFFFFFF
+    if valor >= 0x80000000:
+        valor -= 0x100000000
+    return valor
+
+
+# Monta o snapshot de saída dos registradores: ordem $0..$31, pc, hi, lo, só valores != 0
+def gerar_snapshot_registradores(banco):
+    snapshot = {}
+
+    for indice in range(32):
+        valor = banco["regs"][indice]
+        if valor != 0:
+            snapshot[f"${indice}"] = para_signed_32(valor)
+
+    if banco["pc"] != 0:
+        snapshot["pc"] = para_signed_32(banco["pc"])
+    if banco["hi"] != 0:
+        snapshot["hi"] = para_signed_32(banco["hi"])
+    if banco["lo"] != 0:
+        snapshot["lo"] = para_signed_32(banco["lo"])
+
+    return snapshot
+
+
+# Inicializa o banco de registradores uma única vez, a partir do JSON de entrada
+banco_registradores = inicializar_registradores(dados.get("config", {}).get("regs", {}))
+
+
 # Gerar saida
 def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
@@ -292,7 +366,7 @@ def gerar_saida(hexadecimal):
     return {
         "hex": resultado["hex"],
         "text": resultado["text"],
-        "regs": {},
+        "regs": gerar_snapshot_registradores(banco_registradores),
         "mem": {},
         "stdout": ""
     }
