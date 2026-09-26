@@ -244,15 +244,11 @@ def decodificar_instrucao(hexadecimal):
     binario = hexadecimal_para_binario(hexadecimal)
     formato = idenficar_formato(binario)
 
-    # Decodifica a instrução com base no formato
+    # Decodifica os campos de acordo com o formato identificado
     if formato == "R":
         campos = decodificar_formato_r(binario)
-
-    # Decodifica a instrução com base no formato
     elif formato == "I":
         campos = decodificar_formato_i(binario)
-
-    # Decodifica a instrução com base no formato
     else:
         campos = decodificar_formato_j(binario)
 
@@ -270,15 +266,11 @@ def decodificar_instrucao(hexadecimal):
             "campos": campos
         }
 
-    # Gera o texto da instrução com base no formato e nos campos
+    # Gera o texto da instrução de acordo com o formato
     if formato == "R":
         texto = gerar_texto_r(nome, campos)
-
-    # Se a instrução for do formato I, gera o texto correspondente
     elif formato == "I":
         texto = gerar_texto_i(nome, campos)
-
-    # Se a instrução for do formato J, gera o texto correspondente
     else:
         texto = gerar_texto_j(nome, campos)
 
