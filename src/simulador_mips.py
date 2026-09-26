@@ -264,7 +264,10 @@ def decodificar_instrucao(hexadecimal):
 
         return {
             "hex": hexadecimal,
-            "text": "instrução desconhecida"
+            "text": "instrução desconhecida",
+            "formato": formato,
+            "nome": nome,
+            "campos": campos
         }
 
     # Gera o texto da instrução com base no formato e nos campos
@@ -281,7 +284,10 @@ def decodificar_instrucao(hexadecimal):
 
     return {
         "hex": hexadecimal,
-        "text": texto
+        "text": texto,
+        "formato": formato,
+        "nome": nome,
+        "campos": campos
     }
 
 
@@ -359,16 +365,147 @@ def gerar_snapshot_registradores(banco):
 banco_registradores = inicializar_registradores(dados.get("config", {}).get("regs", {}))
 
 
+#----- Execução das instruções formato R (Entrega 2) -----#
+
+# Executa a instrução R já decodificada, alterando o banco de registradores.
+# Retorna True se a operação estourou 32 bits com sinal (só add/sub detectam isso).
+def executar_r(nome, campos, banco):
+    rs = campos["rs"]
+    rt = campos["rt"]
+    rd = campos["rd"]
+    shift = campos["shift"]
+
+    overflow = False
+
+    if nome == "add":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        resultado = val_rs + val_rt
+        # overflow: operandos com mesmo sinal e resultado (já truncado a 32 bits) com sinal
+        # diferente do deles; o "resultado" cru do Python nao estoura (precisao arbitraria),
+        # entao a comparacao de sinal precisa ser feita sobre o valor truncado
+        resultado_signed = para_signed_32(resultado)
+        if (val_rs >= 0) == (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
+            overflow = True
+        escrever_registrador(banco, rd, resultado)
+
+    elif nome == "sub":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        resultado = val_rs - val_rt
+        # overflow: sinais de rs/rt diferentes e resultado (truncado) com sinal diferente do de rs
+        resultado_signed = para_signed_32(resultado)
+        if (val_rs >= 0) != (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
+            overflow = True
+        escrever_registrador(banco, rd, resultado)
+
+    elif nome == "addu":
+        escrever_registrador(banco, rd, ler_registrador(banco, rs) + ler_registrador(banco, rt))
+
+    elif nome == "subu":
+        escrever_registrador(banco, rd, ler_registrador(banco, rs) - ler_registrador(banco, rt))
+
+    elif nome == "and":
+        escrever_registrador(banco, rd, ler_registrador(banco, rs) & ler_registrador(banco, rt))
+
+    elif nome == "or":
+        escrever_registrador(banco, rd, ler_registrador(banco, rs) | ler_registrador(banco, rt))
+
+    elif nome == "xor":
+        escrever_registrador(banco, rd, ler_registrador(banco, rs) ^ ler_registrador(banco, rt))
+
+    elif nome == "nor":
+        escrever_registrador(banco, rd, ~(ler_registrador(banco, rs) | ler_registrador(banco, rt)))
+
+    elif nome == "slt":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        escrever_registrador(banco, rd, 1 if val_rs < val_rt else 0)
+
+    elif nome == "sll":
+        escrever_registrador(banco, rd, ler_registrador(banco, rt) << shift)
+
+    elif nome == "srl":
+        escrever_registrador(banco, rd, ler_registrador(banco, rt) >> shift)
+
+    elif nome == "sra":
+        # >> em inteiro Python já é aritmético (sign-extend) quando o valor de entrada é negativo
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        escrever_registrador(banco, rd, val_rt >> shift)
+
+    elif nome == "sllv":
+        quantidade = ler_registrador(banco, rs) & 0x1F  # só os 5 bits menos significativos de rs
+        escrever_registrador(banco, rd, ler_registrador(banco, rt) << quantidade)
+
+    elif nome == "srlv":
+        quantidade = ler_registrador(banco, rs) & 0x1F
+        escrever_registrador(banco, rd, ler_registrador(banco, rt) >> quantidade)
+
+    elif nome == "srav":
+        quantidade = ler_registrador(banco, rs) & 0x1F
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        escrever_registrador(banco, rd, val_rt >> quantidade)
+
+    elif nome == "mfhi":
+        escrever_registrador(banco, rd, banco["hi"])
+
+    elif nome == "mflo":
+        escrever_registrador(banco, rd, banco["lo"])
+
+    elif nome == "mult":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        produto = val_rs * val_rt
+        banco["hi"] = (produto >> 32) & 0xFFFFFFFF
+        banco["lo"] = produto & 0xFFFFFFFF
+
+    elif nome == "multu":
+        val_rs = ler_registrador(banco, rs)
+        val_rt = ler_registrador(banco, rt)
+        produto = val_rs * val_rt
+        banco["hi"] = (produto >> 32) & 0xFFFFFFFF
+        banco["lo"] = produto & 0xFFFFFFFF
+
+    elif nome == "div":
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        if val_rt != 0:
+            # trunca em direção a zero (divisão inteira à la C); "//" do Python arredonda
+            # para baixo (floor) e erraria o resultado quando os sinais são diferentes
+            quociente = abs(val_rs) // abs(val_rt)
+            if (val_rs < 0) != (val_rt < 0):
+                quociente = -quociente
+            resto = val_rs - quociente * val_rt
+            banco["lo"] = quociente & 0xFFFFFFFF
+            banco["hi"] = resto & 0xFFFFFFFF
+        # divisão por zero: comportamento indefinido no MIPS real, então não altera HI/LO
+
+    elif nome == "divu":
+        val_rs = ler_registrador(banco, rs)
+        val_rt = ler_registrador(banco, rt)
+        if val_rt != 0:
+            banco["lo"] = (val_rs // val_rt) & 0xFFFFFFFF
+            banco["hi"] = (val_rs % val_rt) & 0xFFFFFFFF
+
+    # demais instruções R (jr, syscall) são de etapas futuras: não fazem nada aqui
+
+    return overflow
+
+
 # Gerar saida
 def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
+
+    overflow = False
+    if resultado.get("formato") == "R":
+        overflow = executar_r(resultado["nome"], resultado["campos"], banco_registradores)
 
     return {
         "hex": resultado["hex"],
         "text": resultado["text"],
         "regs": gerar_snapshot_registradores(banco_registradores),
         "mem": {},
-        "stdout": ""
+        "stdout": "overflow" if overflow else ""
     }
 
 
