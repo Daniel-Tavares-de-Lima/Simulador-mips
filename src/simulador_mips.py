@@ -1,14 +1,12 @@
 import json
 import os
 
-##----Resultado Final
 resultado_final = []
 
 with open("entrada/entrada.json", "r") as arquivo:
     dados = json.load(arquivo)
 
 
-##---------Mapa de indenficação de instruções---------##
 INSTRUCOES_R = {
     0x20: "add",
     0x21: "addu",
@@ -63,7 +61,6 @@ INSTRUCOES_J = {
 }
 
 
-#----- Mapa de identificação de registradores-----#
 REGISTRADORES = {
     0: "$zero",
     1: "$at",
@@ -101,22 +98,20 @@ REGISTRADORES = {
 }
 
 
-# Idenfica o formato da instrução
+# opcode nos 6 bits mais altos decide o formato: R, J ou I
 def idenficar_formato(instrucao):
     opcode = int(instrucao[0:6], 2)
 
-    #Formato R
     if opcode == 0:
         return "R"
 
-    #Formato J
     if opcode == 2 or opcode == 3:
         return "J"
 
-    #Formato I
     return "I"
 
-## Idenfica a instrução com base no formato e no campo relevante
+
+# busca o mnemônico no dicionário certo pra cada formato
 def identificar_instrucao(formato, campo):
     if formato == "R":
         return INSTRUCOES_R.get(campo["opPlus"], "Instrução desconhecida")
@@ -132,13 +127,13 @@ def identificar_instrucao(formato, campo):
 
 
 
-# Conversão de hexadecimal para binário
+# hex de 32 bits vira string binária de 32 caracteres
 def hexadecimal_para_binario(hexa):
     numero = int(hexa, 16)
     return format(numero, "032b")
 
 
-# Função para decodificar instruções do formato R
+# quebra a instrução R em opcode, rs, rt, rd, shift e funct
 def decodificar_formato_r(binario):
     opcode = int(binario[0:6], 2)
     rs = int(binario[6:11], 2)
@@ -157,7 +152,7 @@ def decodificar_formato_r(binario):
         "opPlus": opPlus
     }
 
-# Função para gerar o texto da instrução do formato R
+# monta o assembly da instrução R (os operandos mudam conforme a instrução)
 def gerar_texto_r(nome, campos):
     rs = campos["rs"]
     rt = campos["rt"]
@@ -178,15 +173,14 @@ def gerar_texto_r(nome, campos):
 
     if nome in ["mult", "multu", "div", "divu"]:
         return f"{nome} ${rs}, ${rt}"
-    
+
     if nome in ["sllv", "srlv", "srav"]:
         return f"{nome} ${rd}, ${rt}, ${rs}"
     return f"{nome} ${rd}, ${rs}, ${rt}"
 
 
 
-# Função para decodificar instruções do formato I
-
+# quebra a instrução I em opcode, rs, rt e immediate
 def decodificar_formato_i(binario):
     opcode = int(binario[0:6], 2)
     rs = int(binario[6:11], 2)
@@ -202,7 +196,7 @@ def decodificar_formato_i(binario):
     }
 
 
-# Função para gerar o texto da instrução do formato I
+# monta o assembly da instrução I (os operandos mudam conforme a instrução)
 def gerar_texto_i(nome, campos):
 
     rs = campos["rs"]
@@ -223,7 +217,7 @@ def gerar_texto_i(nome, campos):
 
     return f"{nome} ${rt}, ${rs}, {immediate}"
 
-# Função para decodificar instruções do formato J
+# quebra a instrução J em opcode e endereço
 def decodificar_formato_j(binario):
     opcode = int(binario[0:6], 2)
     address = int(binario[6:32], 2)
@@ -233,18 +227,17 @@ def decodificar_formato_j(binario):
         "address": address
     }
 
-# Função para gerar o texto da instrução do formato J
+# monta o assembly da instrução J
 def gerar_texto_j(nome, campos):
     address = campos["address"]
     return f"{nome} {address}"
 
 
-# Função principal para decodificar a instrução
+# decodifica um hex completo: formato, campos, nome e texto assembly
 def decodificar_instrucao(hexadecimal):
     binario = hexadecimal_para_binario(hexadecimal)
     formato = idenficar_formato(binario)
 
-    # Decodifica os campos de acordo com o formato identificado
     if formato == "R":
         campos = decodificar_formato_r(binario)
     elif formato == "I":
@@ -252,12 +245,9 @@ def decodificar_instrucao(hexadecimal):
     else:
         campos = decodificar_formato_j(binario)
 
-    # Identifica o nome da instrução com base no formato e nos campos
     nome = identificar_instrucao(formato, campos)
 
-    # Se a instrução não for reconhecida, retorna uma mensagem de erro
     if nome == "Instrução desconhecida":
-
         return {
             "hex": hexadecimal,
             "text": "instrução desconhecida",
@@ -266,7 +256,6 @@ def decodificar_instrucao(hexadecimal):
             "campos": campos
         }
 
-    # Gera o texto da instrução de acordo com o formato
     if formato == "R":
         texto = gerar_texto_r(nome, campos)
     elif formato == "I":
@@ -283,9 +272,7 @@ def decodificar_instrucao(hexadecimal):
     }
 
 
-#----- Banco de registradores (32 uso geral + pc/hi/lo) -----#
-
-# Cria e inicializa o banco de registradores no padrão MARS
+# monta o banco de registradores com os defaults do MARS e aplica config.regs por cima
 def inicializar_registradores(regs_config):
     banco = {
         "regs": [0] * 32,   # $0 a $31
@@ -294,11 +281,9 @@ def inicializar_registradores(regs_config):
         "lo": 0
     }
 
-    # Defaults do MARS
-    banco["regs"][28] = 0x10008000  # $gp
-    banco["regs"][29] = 0x7fffeffc  # $sp
+    banco["regs"][28] = 0x10008000  # $gp, padrão MARS
+    banco["regs"][29] = 0x7fffeffc  # $sp, padrão MARS
 
-    # Aplica config.regs por cima dos defaults (pode não existir/estar vazio)
     if regs_config:
         for nome, valor in regs_config.items():
             if nome == "pc":
@@ -314,19 +299,19 @@ def inicializar_registradores(regs_config):
     return banco
 
 
-# Lê o valor (sem sinal, 32 bits) de um registrador pelo índice 0-31
+# lê o valor bruto (sem sinal) de um registrador
 def ler_registrador(banco, indice):
     return banco["regs"][indice]
 
 
-# Escreve valor em um registrador; $0 nunca muda e o valor é truncado a 32 bits
+# $0 nunca muda (hardwired a zero, como no MIPS real); valor sempre truncado a 32 bits
 def escrever_registrador(banco, indice, valor):
     if indice == 0:
         return
     banco["regs"][indice] = valor & 0xFFFFFFFF
 
 
-# Converte um valor de 32 bits sem sinal para inteiro com sinal (complemento de dois)
+# unsigned 32 bits -> signed (complemento de dois)
 def para_signed_32(valor):
     valor = valor & 0xFFFFFFFF
     if valor >= 0x80000000:
@@ -334,7 +319,7 @@ def para_signed_32(valor):
     return valor
 
 
-# Converte um valor de 16 bits sem sinal (o "immediate" decodificado) para inteiro com sinal
+# mesma ideia de para_signed_32, para o immediate de 16 bits
 def para_signed_16(valor):
     valor = valor & 0xFFFF
     if valor >= 0x8000:
@@ -342,7 +327,7 @@ def para_signed_16(valor):
     return valor
 
 
-# Monta o snapshot de saída dos registradores: ordem $0..$31, pc, hi, lo, só valores != 0
+# ordem $0..$31, pc, hi, lo; só valores != 0 (formato exigido na saída)
 def gerar_snapshot_registradores(banco):
     snapshot = {}
 
@@ -361,14 +346,10 @@ def gerar_snapshot_registradores(banco):
     return snapshot
 
 
-# Inicializa o banco de registradores uma única vez, a partir do JSON de entrada
 banco_registradores = inicializar_registradores(dados.get("config", {}).get("regs", {}))
 
 
-#----- Execução das instruções formato R (Entrega 2) -----#
-
-# Executa a instrução R já decodificada, alterando o banco de registradores.
-# Retorna True se a operação estourou 32 bits com sinal (só add/sub detectam isso).
+# Executa a instrução R já decodificada. Retorna True se add/sub estourou 32 bits com sinal.
 def executar_r(nome, campos, banco):
     rs = campos["rs"]
     rt = campos["rt"]
@@ -381,9 +362,8 @@ def executar_r(nome, campos, banco):
         val_rs = para_signed_32(ler_registrador(banco, rs))
         val_rt = para_signed_32(ler_registrador(banco, rt))
         resultado = val_rs + val_rt
-        # overflow: operandos com mesmo sinal e resultado (já truncado a 32 bits) com sinal
-        # diferente do deles; o "resultado" cru do Python nao estoura (precisao arbitraria),
-        # entao a comparacao de sinal precisa ser feita sobre o valor truncado
+        # overflow: mesmo sinal nos operandos e resultado truncado com sinal diferente
+        # (o inteiro do Python não estoura sozinho, por isso comparamos o valor já truncado)
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) == (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
@@ -393,7 +373,6 @@ def executar_r(nome, campos, banco):
         val_rs = para_signed_32(ler_registrador(banco, rs))
         val_rt = para_signed_32(ler_registrador(banco, rt))
         resultado = val_rs - val_rt
-        # overflow: sinais de rs/rt diferentes e resultado (truncado) com sinal diferente do de rs
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) != (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
@@ -429,12 +408,11 @@ def executar_r(nome, campos, banco):
         escrever_registrador(banco, rd, ler_registrador(banco, rt) >> shift)
 
     elif nome == "sra":
-        # >> em inteiro Python já é aritmético (sign-extend) quando o valor de entrada é negativo
         val_rt = para_signed_32(ler_registrador(banco, rt))
-        escrever_registrador(banco, rd, val_rt >> shift)
+        escrever_registrador(banco, rd, val_rt >> shift)  # >> do Python já é aritmético em negativo
 
     elif nome == "sllv":
-        quantidade = ler_registrador(banco, rs) & 0x1F  # só os 5 bits menos significativos de rs
+        quantidade = ler_registrador(banco, rs) & 0x1F  # 5 bits menos significativos de rs
         escrever_registrador(banco, rd, ler_registrador(banco, rt) << quantidade)
 
     elif nome == "srlv":
@@ -470,15 +448,15 @@ def executar_r(nome, campos, banco):
         val_rs = para_signed_32(ler_registrador(banco, rs))
         val_rt = para_signed_32(ler_registrador(banco, rt))
         if val_rt != 0:
-            # trunca em direção a zero (divisão inteira à la C); "//" do Python arredonda
-            # para baixo (floor) e erraria o resultado quando os sinais são diferentes
+            # trunca em direção a zero (divisão à la C); "//" do Python arredonda para
+            # baixo e erra quando os sinais são diferentes
             quociente = abs(val_rs) // abs(val_rt)
             if (val_rs < 0) != (val_rt < 0):
                 quociente = -quociente
             resto = val_rs - quociente * val_rt
             banco["lo"] = quociente & 0xFFFFFFFF
             banco["hi"] = resto & 0xFFFFFFFF
-        # divisão por zero: comportamento indefinido no MIPS real, então não altera HI/LO
+        # divisão por zero é indefinida no MIPS real: não mexe em HI/LO
 
     elif nome == "divu":
         val_rs = ler_registrador(banco, rs)
@@ -487,28 +465,23 @@ def executar_r(nome, campos, banco):
             banco["lo"] = (val_rs // val_rt) & 0xFFFFFFFF
             banco["hi"] = (val_rs % val_rt) & 0xFFFFFFFF
 
-    # demais instruções R (jr, syscall) são de etapas futuras: não fazem nada aqui
+    # jr e syscall ficam para depois (Entrega 3+): nada acontece aqui
 
     return overflow
 
 
-#----- Execução das instruções formato I (Entrega 2) -----#
-
-# Executa a instrução I já decodificada, alterando o banco de registradores.
-# Retorna True se a operação estourou 32 bits com sinal (só addi detecta isso).
+# Executa a instrução I já decodificada. Retorna True se addi estourou 32 bits com sinal.
 def executar_i(nome, campos, banco):
     rs = campos["rs"]
     rt = campos["rt"]
-    immediate = campos["immediate"]  # vem cru, 16 bits sem sinal (0-65535)
+    immediate = campos["immediate"]  # 16 bits sem sinal, 0-65535
 
     overflow = False
 
     if nome == "addi":
         val_rs = para_signed_32(ler_registrador(banco, rs))
-        imm_signed = para_signed_16(immediate)  # soma com sinal: precisa de sign-extend
+        imm_signed = para_signed_16(immediate)
         resultado = val_rs + imm_signed
-        # mesma regra de overflow do add: operandos com mesmo sinal e resultado
-        # truncado a 32 bits com sinal diferente do deles
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) == (imm_signed >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
@@ -516,18 +489,16 @@ def executar_i(nome, campos, banco):
 
     elif nome == "addiu":
         val_rs = para_signed_32(ler_registrador(banco, rs))
-        # apesar do nome, addiu também faz sign-extend do imediato; só não gera overflow
-        imm_signed = para_signed_16(immediate)
+        imm_signed = para_signed_16(immediate)  # addiu também faz sign-extend, só não gera overflow
         escrever_registrador(banco, rt, val_rs + imm_signed)
 
     elif nome == "slti":
         val_rs = para_signed_32(ler_registrador(banco, rs))
-        imm_signed = para_signed_16(immediate)  # comparação com sinal
+        imm_signed = para_signed_16(immediate)
         escrever_registrador(banco, rt, 1 if val_rs < imm_signed else 0)
 
     elif nome == "andi":
-        # zero-extend do imediato (0-65535, sem sinal), diferente de addi/slti
-        escrever_registrador(banco, rt, ler_registrador(banco, rs) & immediate)
+        escrever_registrador(banco, rt, ler_registrador(banco, rs) & immediate)  # zero-extend, diferente de addi/slti
 
     elif nome == "ori":
         escrever_registrador(banco, rt, ler_registrador(banco, rs) | immediate)
@@ -535,12 +506,12 @@ def executar_i(nome, campos, banco):
     elif nome == "xori":
         escrever_registrador(banco, rt, ler_registrador(banco, rs) ^ immediate)
 
-    # demais instruções I (lw, sw, lui, beq, bne, etc.) são de etapa futura: não fazem nada aqui
+    # lw, sw, lui, beq, bne etc ficam para depois (Entrega 3+): nada acontece aqui
 
     return overflow
 
 
-# Gerar saida
+# decodifica, executa e monta o objeto de saída de uma instrução
 def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
 
@@ -559,10 +530,8 @@ def gerar_saida(hexadecimal):
     }
 
 
-#Lista de instruções
 instrucoes = dados["text"]
 
-# percorre a lista de instruções e converte cada uma para binário
 for instrucao in instrucoes:
     resultado_final.append(gerar_saida(instrucao))
 
