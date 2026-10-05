@@ -1,10 +1,29 @@
 import json
 import os
+import sys
 
 resultado_final = []
 
-with open("entrada/entrada.json", "r") as arquivo:
+# caminhos relativos à raiz do projeto (funciona de qualquer pasta)
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CAMINHO_ENTRADA = os.path.join(RAIZ, "entrada", "entrada.json")
+CAMINHO_SAIDA = os.path.join(RAIZ, "saida", "saida.json")
+
+# uso: python src/simulador_mips.py [entrada.json] [saida.json] [--seguir-pc]
+argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
+SEGUIR_PC = "--seguir-pc" in sys.argv
+if len(argumentos) >= 1:
+    CAMINHO_ENTRADA = argumentos[0]
+if len(argumentos) >= 2:
+    CAMINHO_SAIDA = argumentos[1]
+
+with open(CAMINHO_ENTRADA, "r") as arquivo:
     dados = json.load(arquivo)
+
+# endereços base dos segmentos (MARS)
+BASE_TEXT = 0x00400000
+BASE_DATA = 0x10010000
+BASE_SP = 0x7fffeffc
 
 
 INSTRUCOES_R = {
@@ -203,19 +222,25 @@ def gerar_texto_i(nome, campos):
     rt = campos["rt"]
     immediate = campos["immediate"]
 
+    # lui/andi/ori/xori usam imediato sem sinal; os demais usam com sinal (como no MARS)
     if nome == "lui":
         return f"{nome} ${rt}, {immediate}"
 
+    if nome in ["andi", "ori", "xori"]:
+        return f"{nome} ${rt}, ${rs}, {immediate}"
+
+    imm_sinal = para_signed_16(immediate)
+
     if nome in ["lw", "lbu", "sb", "sw", "lb"]:
-        return f"{nome} ${rt}, {immediate}(${rs})"
+        return f"{nome} ${rt}, {imm_sinal}(${rs})"
 
     if nome in ["beq", "bne"]:
-        return f"{nome} ${rs}, ${rt}, {immediate}"
+        return f"{nome} ${rs}, ${rt}, {imm_sinal}"
 
     if nome in ["bltz", "blez", "bgtz"]:
-        return f"{nome} ${rs}, {immediate}"
+        return f"{nome} ${rs}, {imm_sinal}"
 
-    return f"{nome} ${rt}, ${rs}, {immediate}"
+    return f"{nome} ${rt}, ${rs}, {imm_sinal}"
 
 # quebra a instrução J em opcode e endereço
 def decodificar_formato_j(binario):
@@ -286,11 +311,12 @@ def inicializar_registradores(regs_config):
 
     if regs_config:
         for nome, valor in regs_config.items():
-            if nome == "pc":
+            chave = nome.lstrip("$")
+            if chave == "pc":
                 banco["pc"] = valor & 0xFFFFFFFF
-            elif nome == "hi":
+            elif chave == "hi":
                 banco["hi"] = valor & 0xFFFFFFFF
-            elif nome == "lo":
+            elif chave == "lo":
                 banco["lo"] = valor & 0xFFFFFFFF
             else:
                 indice = int(nome.lstrip("$"))
@@ -349,6 +375,71 @@ def gerar_snapshot_registradores(banco):
 banco_registradores = inicializar_registradores(dados.get("config", {}).get("regs", {}))
 
 
+# ---------------------------------------------------------------------------
+# Memória: dicionário endereço -> byte (8 bits). Só guarda bytes != 0, então cobre
+# os segmentos data, sp e text sem precisar alocar vetores grandes.
+# Little-endian (igual ao MARS): o byte menos significativo fica no menor endereço.
+# ---------------------------------------------------------------------------
+memoria = {}
+
+
+def ler_byte(endereco):
+    return memoria.get(endereco & 0xFFFFFFFF, 0)
+
+
+def escrever_byte(endereco, valor):
+    endereco = endereco & 0xFFFFFFFF
+    valor = valor & 0xFF
+    if valor == 0:
+        memoria.pop(endereco, None)  # zero não precisa ficar guardado
+    else:
+        memoria[endereco] = valor
+
+
+def ler_word(endereco):
+    return (ler_byte(endereco)
+            | (ler_byte(endereco + 1) << 8)
+            | (ler_byte(endereco + 2) << 16)
+            | (ler_byte(endereco + 3) << 24))
+
+
+def escrever_word(endereco, valor):
+    for i in range(4):
+        escrever_byte(endereco + i, (valor >> (8 * i)) & 0xFF)
+
+
+# converte "123", "0x7b" ou inteiro em int
+def converter_numero(valor):
+    if isinstance(valor, int):
+        return valor
+    try:
+        return int(str(valor).strip(), 0)
+    except ValueError:
+        return int(str(valor).strip(), 10)
+
+
+# carrega config.mem e data na memória antes da execução
+def carregar_memoria_inicial(dados_entrada):
+    for endereco, valor in dados_entrada.get("config", {}).get("mem", {}).items():
+        escrever_word(converter_numero(endereco), converter_numero(valor))
+    for endereco, valor in dados_entrada.get("data", {}).items():
+        escrever_word(converter_numero(endereco), converter_numero(valor))
+
+
+# words alinhados com valor != 0, em ordem crescente de endereço, valores com sinal
+def gerar_snapshot_memoria():
+    enderecos = sorted({endereco & ~3 for endereco in memoria})
+    snapshot = {}
+    for endereco in enderecos:
+        valor = ler_word(endereco)
+        if valor != 0:
+            snapshot[str(endereco)] = para_signed_32(valor)
+    return snapshot
+
+
+carregar_memoria_inicial(dados)
+
+
 # Executa a instrução R já decodificada. Retorna True se add/sub estourou 32 bits com sinal.
 def executar_r(nome, campos, banco):
     rs = campos["rs"]
@@ -367,7 +458,8 @@ def executar_r(nome, campos, banco):
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) == (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
-        escrever_registrador(banco, rd, resultado)
+        else:
+            escrever_registrador(banco, rd, resultado)  # com overflow o MARS não escreve
 
     elif nome == "sub":
         val_rs = para_signed_32(ler_registrador(banco, rs))
@@ -376,7 +468,8 @@ def executar_r(nome, campos, banco):
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) != (val_rt >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
-        escrever_registrador(banco, rd, resultado)
+        else:
+            escrever_registrador(banco, rd, resultado)
 
     elif nome == "addu":
         escrever_registrador(banco, rd, ler_registrador(banco, rs) + ler_registrador(banco, rt))
@@ -465,7 +558,10 @@ def executar_r(nome, campos, banco):
             banco["lo"] = (val_rs // val_rt) & 0xFFFFFFFF
             banco["hi"] = (val_rs % val_rt) & 0xFFFFFFFF
 
-    # jr e syscall ficam para depois (Entrega 3+): nada acontece aqui
+    elif nome == "jr":
+        banco["pc"] = ler_registrador(banco, rs)
+
+    # syscall não faz parte do projeto: nada acontece aqui
 
     return overflow
 
@@ -485,7 +581,8 @@ def executar_i(nome, campos, banco):
         resultado_signed = para_signed_32(resultado)
         if (val_rs >= 0) == (imm_signed >= 0) and (resultado_signed >= 0) != (val_rs >= 0):
             overflow = True
-        escrever_registrador(banco, rt, resultado)
+        else:
+            escrever_registrador(banco, rt, resultado)
 
     elif nome == "addiu":
         val_rs = para_signed_32(ler_registrador(banco, rs))
@@ -506,9 +603,63 @@ def executar_i(nome, campos, banco):
     elif nome == "xori":
         escrever_registrador(banco, rt, ler_registrador(banco, rs) ^ immediate)
 
-    # lw, sw, lui, beq, bne etc ficam para depois (Entrega 3+): nada acontece aqui
+    # ---------------- Entrega 3: lui, load, store e desvios ----------------
+    # (banco["pc"] já foi incrementado em +4 antes de chegar aqui)
+    elif nome == "lui":
+        escrever_registrador(banco, rt, immediate << 16)
+
+    elif nome == "lw":
+        endereco = ler_registrador(banco, rs) + para_signed_16(immediate)
+        escrever_registrador(banco, rt, ler_word(endereco))
+
+    elif nome == "lb":
+        endereco = ler_registrador(banco, rs) + para_signed_16(immediate)
+        byte = ler_byte(endereco)
+        if byte >= 0x80:
+            byte -= 0x100  # sign-extend de 8 para 32 bits
+        escrever_registrador(banco, rt, byte)
+
+    elif nome == "lbu":
+        endereco = ler_registrador(banco, rs) + para_signed_16(immediate)
+        escrever_registrador(banco, rt, ler_byte(endereco))  # zero-extend
+
+    elif nome == "sw":
+        endereco = ler_registrador(banco, rs) + para_signed_16(immediate)
+        escrever_word(endereco, ler_registrador(banco, rt))
+
+    elif nome == "sb":
+        endereco = ler_registrador(banco, rs) + para_signed_16(immediate)
+        escrever_byte(endereco, ler_registrador(banco, rt))
+
+    elif nome in ["beq", "bne", "bltz", "blez", "bgtz"]:
+        val_rs = para_signed_32(ler_registrador(banco, rs))
+        val_rt = para_signed_32(ler_registrador(banco, rt))
+        if nome == "beq":
+            tomar = val_rs == val_rt
+        elif nome == "bne":
+            tomar = val_rs != val_rt
+        elif nome == "bltz":
+            tomar = val_rs < 0
+        elif nome == "blez":
+            tomar = val_rs <= 0
+        else:
+            tomar = val_rs > 0
+        if tomar:
+            # destino = (PC+4) + offset*4
+            banco["pc"] = (banco["pc"] + (para_signed_16(immediate) << 2)) & 0xFFFFFFFF
 
     return overflow
+
+
+# Executa a instrução J (j / jal). banco["pc"] já está em PC+4.
+def executar_j(nome, campos, banco):
+    destino = (banco["pc"] & 0xF0000000) | (campos["address"] << 2)
+
+    if nome == "jal":
+        escrever_registrador(banco, 31, banco["pc"])  # $ra = endereço da próxima instrução
+
+    banco["pc"] = destino & 0xFFFFFFFF
+    return False
 
 
 # decodifica, executa e monta o objeto de saída de uma instrução
@@ -516,26 +667,42 @@ def gerar_saida(hexadecimal):
     resultado = decodificar_instrucao(hexadecimal)
 
     overflow = False
+    # o PC avança +4 antes de executar (desvios/saltos sobrescrevem depois)
+    banco_registradores["pc"] = (banco_registradores["pc"] + 4) & 0xFFFFFFFF
+
     if resultado.get("formato") == "R":
         overflow = executar_r(resultado["nome"], resultado["campos"], banco_registradores)
     elif resultado.get("formato") == "I":
         overflow = executar_i(resultado["nome"], resultado["campos"], banco_registradores)
+    elif resultado.get("formato") == "J":
+        overflow = executar_j(resultado["nome"], resultado["campos"], banco_registradores)
 
     return {
         "hex": resultado["hex"],
         "text": resultado["text"],
         "regs": gerar_snapshot_registradores(banco_registradores),
-        "mem": {},
+        "mem": gerar_snapshot_memoria(),
         "stdout": "overflow" if overflow else ""
     }
 
 
 instrucoes = dados["text"]
 
-for instrucao in instrucoes:
-    resultado_final.append(gerar_saida(instrucao))
+if not SEGUIR_PC:
+    # padrão do enunciado: processa as instruções na ordem em que aparecem no arquivo
+    for instrucao in instrucoes:
+        resultado_final.append(gerar_saida(instrucao))
+else:
+    # modo opcional: segue o PC de verdade (desvios e saltos mudam a próxima instrução)
+    passos = 0
+    while passos < 100000:
+        indice = (banco_registradores["pc"] - BASE_TEXT) // 4
+        if banco_registradores["pc"] < BASE_TEXT or indice >= len(instrucoes):
+            break
+        resultado_final.append(gerar_saida(instrucoes[indice]))
+        passos += 1
 
-os.makedirs("saida", exist_ok=True)
+os.makedirs(os.path.dirname(CAMINHO_SAIDA) or ".", exist_ok=True)
 
-with open("saida/saida.json", "w") as arquivo:
+with open(CAMINHO_SAIDA, "w") as arquivo:
     json.dump(resultado_final, arquivo, indent=4)
